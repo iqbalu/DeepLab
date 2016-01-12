@@ -134,6 +134,7 @@ void DataTransformer<Dtype>::Transform(const Datum& datum,
   }
 }
 
+
 template<typename Dtype>
 void DataTransformer<Dtype>::Transform(const Datum& datum,
                                        Blob<Dtype>* transformed_blob) {
@@ -141,6 +142,7 @@ void DataTransformer<Dtype>::Transform(const Datum& datum,
   const int datum_height = datum.height();
   const int datum_width = datum.width();
 
+  // Check dimensions.
   const int channels = transformed_blob->channels();
   const int height = transformed_blob->height();
   const int width = transformed_blob->width();
@@ -189,10 +191,12 @@ void DataTransformer<Dtype>::Transform(const vector<Datum> & datum_vector,
 template<typename Dtype>
 void DataTransformer<Dtype>::Transform(const cv::Mat& cv_img,
                                        Blob<Dtype>* transformed_blob) {
+  const int crop_size = param_.crop_size();
   const int img_channels = cv_img.channels();
   int img_height = cv_img.rows;
   int img_width = cv_img.cols;
 
+  // Check dimensions.
   const int channels = transformed_blob->channels();
   const int height = transformed_blob->height();
   const int width = transformed_blob->width();
@@ -205,7 +209,7 @@ void DataTransformer<Dtype>::Transform(const cv::Mat& cv_img,
 
   CHECK(cv_img.depth() == CV_8U) << "Image data type must be unsigned byte";
 
-  const int crop_size = param_.crop_size();
+
   const Dtype scale = param_.scale();
   const bool do_mirror = param_.mirror() && Rand(2);
   const bool has_mean_file = param_.has_mean_file();
@@ -246,8 +250,8 @@ void DataTransformer<Dtype>::Transform(const cv::Mat& cv_img,
   int pad_height = std::max(crop_size - img_height, 0);
   int pad_width  = std::max(crop_size - img_width, 0);
   if (pad_height > 0 || pad_width > 0) {
-    cv::copyMakeBorder(cv_cropped_img, cv_cropped_img, 0, pad_height, 
-          0, pad_width, cv::BORDER_CONSTANT, 
+    cv::copyMakeBorder(cv_cropped_img, cv_cropped_img, 0, pad_height,
+          0, pad_width, cv::BORDER_CONSTANT,
           cv::Scalar(mean_values_[0], mean_values_[1], mean_values_[2]));
     // update height/width
     img_height   = cv_cropped_img.rows;
@@ -336,6 +340,11 @@ void DataTransformer<Dtype>::TransformImgAndSeg(const std::vector<cv::Mat>& cv_i
   CHECK_EQ(data_height, label_height);
   CHECK_EQ(data_width, label_width);
 
+  CHECK_EQ(data_height, img_height);
+  CHECK_EQ(data_width, img_width);
+  CHECK_EQ(seg_height, label_height);
+  CHECK_EQ(seg_width, label_width);
+
   CHECK(cv_img_seg[0].depth() == CV_8U) << "Image data type must be unsigned byte";
   CHECK(cv_img_seg[1].depth() == CV_8U) << "Seg data type must be unsigned byte";
 
@@ -364,12 +373,12 @@ void DataTransformer<Dtype>::TransformImgAndSeg(const std::vector<cv::Mat>& cv_i
       }
     }
   }
- 
+
   int h_off = 0;
   int w_off = 0;
-  cv::Mat cv_cropped_img = cv_img_seg[0];  
+  cv::Mat cv_cropped_img = cv_img_seg[0];
   cv::Mat cv_cropped_seg = cv_img_seg[1];
-  
+
   // transform to double, since we will pad mean pixel values
   cv_cropped_img.convertTo(cv_cropped_img, CV_64F);
 
@@ -378,11 +387,11 @@ void DataTransformer<Dtype>::TransformImgAndSeg(const std::vector<cv::Mat>& cv_i
   int pad_height = std::max(crop_size - img_height, 0);
   int pad_width  = std::max(crop_size - img_width, 0);
   if (pad_height > 0 || pad_width > 0) {
-    cv::copyMakeBorder(cv_cropped_img, cv_cropped_img, 0, pad_height, 
-          0, pad_width, cv::BORDER_CONSTANT, 
+    cv::copyMakeBorder(cv_cropped_img, cv_cropped_img, 0, pad_height,
+          0, pad_width, cv::BORDER_CONSTANT,
           cv::Scalar(mean_values_[0], mean_values_[1], mean_values_[2]));
-    cv::copyMakeBorder(cv_cropped_seg, cv_cropped_seg, 0, pad_height, 
-          0, pad_width, cv::BORDER_CONSTANT, 
+    cv::copyMakeBorder(cv_cropped_seg, cv_cropped_seg, 0, pad_height,
+          0, pad_width, cv::BORDER_CONSTANT,
 		       cv::Scalar(ignore_label));
     // update height/width
     img_height   = cv_cropped_img.rows;
@@ -395,7 +404,7 @@ void DataTransformer<Dtype>::TransformImgAndSeg(const std::vector<cv::Mat>& cv_i
   // crop img/seg
   if (crop_size) {
     CHECK_EQ(crop_size, data_height);
-    CHECK_EQ(crop_size, data_width);    
+    CHECK_EQ(crop_size, data_width);
     // We only do random crop when we do training.
     if (phase_ == Caffe::TRAIN) {
       h_off = Rand(img_height - crop_size + 1);
@@ -408,8 +417,8 @@ void DataTransformer<Dtype>::TransformImgAndSeg(const std::vector<cv::Mat>& cv_i
     cv::Rect roi(w_off, h_off, crop_size, crop_size);
     cv_cropped_img = cv_cropped_img(roi);
     cv_cropped_seg = cv_cropped_seg(roi);
-  } 
-  
+  }
+
   CHECK(cv_cropped_img.data);
   CHECK(cv_cropped_seg.data);
 
@@ -470,10 +479,22 @@ void DataTransformer<Dtype>::TransformImgAndSeg(const std::vector<cv::Mat>& cv_i
 template<typename Dtype>
 void DataTransformer<Dtype>::Transform(Blob<Dtype>* input_blob,
                                        Blob<Dtype>* transformed_blob) {
+  const int crop_size = param_.crop_size();
   const int input_num = input_blob->num();
   const int input_channels = input_blob->channels();
   const int input_height = input_blob->height();
   const int input_width = input_blob->width();
+
+  if (transformed_blob->count() == 0) {
+    // Initialize transformed_blob with the right shape.
+    if (crop_size) {
+      transformed_blob->Reshape(input_num, input_channels,
+                                crop_size, crop_size);
+    } else {
+      transformed_blob->Reshape(input_num, input_channels,
+                                input_height, input_width);
+    }
+  }
 
   const int num = transformed_blob->num();
   const int channels = transformed_blob->channels();
@@ -486,7 +507,7 @@ void DataTransformer<Dtype>::Transform(Blob<Dtype>* input_blob,
   CHECK_GE(input_height, height);
   CHECK_GE(input_width, width);
 
-  const int crop_size = param_.crop_size();
+
   const Dtype scale = param_.scale();
   const bool do_mirror = param_.mirror() && Rand(2);
   const bool has_mean_file = param_.has_mean_file();
@@ -566,6 +587,37 @@ void DataTransformer<Dtype>::Transform(Blob<Dtype>* input_blob,
     DLOG(INFO) << "Scale: " << scale;
     caffe_scal(size, scale, transformed_data);
   }
+}
+
+template<typename Dtype>
+vector<int> DataTransformer<Dtype>::InferBlobShape(const cv::Mat& cv_img) {
+  const int crop_size = param_.crop_size();
+  const int img_channels = cv_img.channels();
+  const int img_height = cv_img.rows;
+  const int img_width = cv_img.cols;
+  // Check dimensions.
+  CHECK_GT(img_channels, 0);
+  CHECK_GE(img_height, crop_size);
+  CHECK_GE(img_width, crop_size);
+  // Build BlobShape.
+  vector<int> shape(4);
+  shape[0] = 1;
+  shape[1] = img_channels;
+  shape[2] = (crop_size)? crop_size: img_height;
+  shape[3] = (crop_size)? crop_size: img_width;
+  return shape;
+}
+
+template<typename Dtype>
+vector<int> DataTransformer<Dtype>::InferBlobShape(
+    const vector<cv::Mat> & mat_vector) {
+  const int num = mat_vector.size();
+  CHECK_GT(num, 0) << "There is no cv_img to in the vector";
+  // Use first cv_img in the vector to InferBlobShape.
+  vector<int> shape = InferBlobShape(mat_vector[0]);
+  // Adjust num to the size of the vector.
+  shape[0] = num;
+  return shape;
 }
 
 template <typename Dtype>

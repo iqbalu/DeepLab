@@ -89,10 +89,20 @@ class DataTransformer {
    */
   void Transform(Blob<Dtype>* input_blob, Blob<Dtype>* transformed_blob);
 
+  vector<int> InferBlobShape(const vector<cv::Mat> & mat_vector);
+  /**
+   * @brief Infers the shape of transformed_blob will have when
+   *    the transformation is applied to the data.
+   *
+   * @param cv_img
+   *    cv::Mat containing the data to be transformed.
+   */
+  vector<int> InferBlobShape(const cv::Mat& cv_img);
+
  protected:
    /**
    * @brief Generates a random integer from Uniform({0, 1, ..., n-1}).
-   * 
+   *
    * @param n
    *    The upperbound (exclusive) value of the random number.
    * @return

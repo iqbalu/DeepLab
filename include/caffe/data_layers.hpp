@@ -360,6 +360,10 @@ class ImageDimPrefetchingDataLayer : public BasePrefetchingDataLayer<Dtype> {
   // The thread's function
   virtual void InternalThreadEntry() {}
 
+  virtual void Reshape(const vector<Blob<Dtype>*>& bottom,
+      const vector<Blob<Dtype>*>& top);
+
+
  protected:
   Blob<Dtype> prefetch_data_dim_;
   bool output_data_dim_;

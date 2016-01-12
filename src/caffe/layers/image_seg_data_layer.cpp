@@ -34,7 +34,7 @@ void ImageSegDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom
   string root_folder = this->layer_param_.image_data_param().root_folder();
 
   TransformationParameter transform_param = this->layer_param_.transform_param();
-  CHECK(transform_param.has_mean_file() == false) << 
+  CHECK(transform_param.has_mean_file() == false) <<
          "ImageSegDataLayer does not support mean file";
   CHECK((new_height == 0 && new_width == 0) ||
       (new_height > 0 && new_width > 0)) << "Current implementation requires "
@@ -94,7 +94,7 @@ void ImageSegDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom
     top[1]->Reshape(batch_size, 1, crop_size, crop_size);
     this->prefetch_label_.Reshape(batch_size, 1, crop_size, crop_size);
     this->transformed_label_.Reshape(1, 1, crop_size, crop_size);
-     
+
   } else {
     top[0]->Reshape(batch_size, channels, height, width);
     this->prefetch_data_.Reshape(batch_size, channels, height, width);
@@ -103,7 +103,7 @@ void ImageSegDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom
     //label
     top[1]->Reshape(batch_size, 1, height, width);
     this->prefetch_label_.Reshape(batch_size, 1, height, width);
-    this->transformed_label_.Reshape(1, 1, height, width);     
+    this->transformed_label_.Reshape(1, 1, height, width);
   }
 
   // image dimensions, for each image, stores (img_height, img_width)
@@ -141,13 +141,6 @@ void ImageSegDataLayer<Dtype>::InternalThreadEntry() {
   CHECK(this->prefetch_data_.count());
   CHECK(this->transformed_data_.count());
 
-  Dtype* top_data     = this->prefetch_data_.mutable_cpu_data();
-  Dtype* top_label    = this->prefetch_label_.mutable_cpu_data(); 
-  Dtype* top_data_dim = this->prefetch_data_dim_.mutable_cpu_data();
-
-  const int max_height = this->prefetch_data_.height();
-  const int max_width  = this->prefetch_data_.width();
-
   ImageDataParameter image_data_param    = this->layer_param_.image_data_param();
   const int batch_size = image_data_param.batch_size();
   const int new_height = image_data_param.new_height();
@@ -158,60 +151,74 @@ void ImageSegDataLayer<Dtype>::InternalThreadEntry() {
   string root_folder   = image_data_param.root_folder();
 
   const int lines_size = lines_.size();
-  int top_data_dim_offset;
+
+  // Reshape according to the first image of each batch
+  // on single input batches allows for inputs of varying dimension.
+  cv::Mat cv_img = ReadImageToCVMat(root_folder + lines_[lines_id_].first,
+      new_height, new_width, is_color);
+
+  CHECK(cv_img.data) << "Could not load " << lines_[lines_id_].first;
+  // Use data_transformer to infer the expected blob shape from a cv_img.
+  vector<int> top_shape = this->data_transformer_.InferBlobShape(cv_img);
+  this->transformed_data_.Reshape(top_shape[0], top_shape[1], top_shape[2], top_shape[3]);
+  this->transformed_label_.Reshape(top_shape[0], 1, top_shape[2], top_shape[3]);
+
+  // Reshape batch according to the batch_size.
+  top_shape[0] = batch_size;
+  this->prefetch_data_.Reshape(batch_size, top_shape[1], top_shape[2], top_shape[3]);
+  this->prefetch_label_.Reshape(batch_size, 1, top_shape[2], top_shape[3]);
+
+  Dtype* prefetch_data = this->prefetch_data_.mutable_cpu_data();
+  Dtype* prefetch_label = this->prefetch_label_.mutable_cpu_data();
+  CHECK(this->prefetch_data_.count());
+  CHECK(this->transformed_data_.count());
 
   for (int item_id = 0; item_id < batch_size; ++item_id) {
-    top_data_dim_offset = this->prefetch_data_dim_.offset(item_id);
-
     std::vector<cv::Mat> cv_img_seg;
-
     // get a blob
     timer.Start();
     CHECK_GT(lines_size, lines_id_);
 
     int img_row, img_col;
-    cv_img_seg.push_back(ReadImageToCVMat(root_folder + lines_[lines_id_].first,
-	  new_height, new_width, is_color, &img_row, &img_col));
+    cv::Mat cv_img = ReadImageToCVMat(root_folder + lines_[lines_id_].first,
+      		new_height, new_width, is_color, &img_row, &img_col);
+//    cv::resize(cv_img, cv_img, cv::Size(s,s));
+    CHECK(cv_img.data) << "Could not load " << lines_[lines_id_].first;
+    cv_img_seg.push_back(cv_img);
 
-    top_data_dim[top_data_dim_offset]     = static_cast<Dtype>(std::min(max_height, img_row));
-    top_data_dim[top_data_dim_offset + 1] = static_cast<Dtype>(std::min(max_width, img_col));
-
-    if (!cv_img_seg[0].data) {
-      DLOG(INFO) << "Fail to load img: " << root_folder + lines_[lines_id_].first;
-    }
     if (label_type == ImageDataParameter_LabelType_PIXEL) {
-      cv_img_seg.push_back(ReadImageToCVMat(root_folder + lines_[lines_id_].second,
-					    new_height, new_width, false));
-      if (!cv_img_seg[1].data) {
-	DLOG(INFO) << "Fail to load seg: " << root_folder + lines_[lines_id_].second;
-      }
+      cv::Mat cv_seg = ReadImageToCVMat(root_folder + lines_[lines_id_].second,
+                  new_height, new_width, false);
+//      cv::resize(cv_seg, cv_seg, cv::Size(s,s));
+      CHECK(cv_seg.data) << "Could not load " << lines_[lines_id_].second;
+      cv_img_seg.push_back(cv_seg);
     }
     else if (label_type == ImageDataParameter_LabelType_IMAGE) {
       const int label = atoi(lines_[lines_id_].second.c_str());
-      cv::Mat seg(cv_img_seg[0].rows, cv_img_seg[0].cols, 
-		  CV_8UC1, cv::Scalar(label));
-      cv_img_seg.push_back(seg);      
+      cv::Mat cv_seg(cv_img_seg[0].rows, cv_img_seg[0].cols,
+          CV_8UC1, cv::Scalar(label));
+      cv_img_seg.push_back(cv_seg);
     }
     else {
-      cv::Mat seg(cv_img_seg[0].rows, cv_img_seg[0].cols, 
-		  CV_8UC1, cv::Scalar(ignore_label));
-      cv_img_seg.push_back(seg);
+      cv::Mat cv_seg(cv_img_seg[0].rows, cv_img_seg[0].cols,
+        CV_8UC1, cv::Scalar(ignore_label));
+      cv_img_seg.push_back(cv_seg);
     }
 
     read_time += timer.MicroSeconds();
     timer.Start();
+
     // Apply transformations (mirror, crop...) to the image
     int offset;
-
     offset = this->prefetch_data_.offset(item_id);
-    this->transformed_data_.set_cpu_data(top_data + offset);
+    this->transformed_data_.set_cpu_data(prefetch_data + offset);
 
     offset = this->prefetch_label_.offset(item_id);
-    this->transformed_label_.set_cpu_data(top_label + offset);
+    this->transformed_label_.set_cpu_data(prefetch_label + offset);
 
-    this->data_transformer_.TransformImgAndSeg(cv_img_seg, 
-	 &(this->transformed_data_), &(this->transformed_label_),
-	 ignore_label);
+    this->data_transformer_.TransformImgAndSeg(cv_img_seg,
+          &(this->transformed_data_), &(this->transformed_label_),
+          ignore_label);
     trans_time += timer.MicroSeconds();
 
     // go to the next std::vector<int>::iterator iter;
