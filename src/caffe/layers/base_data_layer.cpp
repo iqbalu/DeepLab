@@ -104,6 +104,28 @@ void ImageDimPrefetchingDataLayer<Dtype>::LayerSetUp(
   DLOG(INFO) << "Prefetch initialized.";
 }
 
+  /* 
+   * Umar add
+   *
+   */
+template <typename Dtype>
+void ImageDimPrefetchingDataLayer<Dtype>::Reshape(
+    const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
+   // reshape data
+   int N = this->prefetch_data_.num();
+   int K = this->prefetch_data_.channels();
+   int H = this->prefetch_data_.height();
+   int W = this->prefetch_data_.width();
+   top[0]->Reshape(N, K, H, W);
+
+   // reshape label
+   N = this->prefetch_label_.num();
+   K = this->prefetch_label_.channels();
+   H = this->prefetch_label_.height();
+   W = this->prefetch_label_.width();
+   top[1]->Reshape(N, K, H, W);
+}
+
 
 template <typename Dtype>
 void ImageDimPrefetchingDataLayer<Dtype>::Forward_cpu(
@@ -112,15 +134,18 @@ void ImageDimPrefetchingDataLayer<Dtype>::Forward_cpu(
   BasePrefetchingDataLayer<Dtype>::JoinPrefetchThread();
   DLOG(INFO) << "Thread joined";
   // Copy the data
+  CHECK_LE(this->prefetch_data_.count(), top[0]->count());
   caffe_copy(this->prefetch_data_.count(), this->prefetch_data_.cpu_data(),
              top[0]->mutable_cpu_data());
   DLOG(INFO) << "Prefetch copied";
   if (this->output_labels_) {
+  CHECK_LE(this->prefetch_label_.count(), top[1]->count());
     caffe_copy(this->prefetch_label_.count(), this->prefetch_label_.cpu_data(),
                top[1]->mutable_cpu_data());
   }
   if (output_data_dim_) {
-    caffe_copy(prefetch_data_dim_.count(), prefetch_data_dim_.cpu_data(),
+  CHECK_LE(this->prefetch_data_dim_.count(), top[2]->count());   
+  caffe_copy(prefetch_data_dim_.count(), prefetch_data_dim_.cpu_data(),
 	       top[2]->mutable_cpu_data());
   }
 

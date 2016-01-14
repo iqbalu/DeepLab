@@ -6,7 +6,7 @@ namespace caffe {
 
 template <typename Dtype>
 void BasePrefetchingDataLayer<Dtype>::Forward_gpu(
-    const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
+    const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) { 
   // First, join the thread
   JoinPrefetchThread();
   // Copy the data
@@ -27,9 +27,11 @@ void BasePrefetchingDataLayer<Dtype>::Forward_gpu(
 template <typename Dtype>
 void ImageDimPrefetchingDataLayer<Dtype>::Forward_gpu(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
+
   // First, join the thread
   BasePrefetchingDataLayer<Dtype>::JoinPrefetchThread();
-  // Copy the data
+  
+   // Copy the data
   caffe_copy(this->prefetch_data_.count(), this->prefetch_data_.cpu_data(),
 	     top[0]->mutable_gpu_data());
   if (this->output_labels_) {

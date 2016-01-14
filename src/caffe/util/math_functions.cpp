@@ -106,6 +106,14 @@ void caffe_add_scalar(const int N, const double alpha, double* Y) {
 
 template <typename Dtype>
 void caffe_copy(const int N, const Dtype* X, Dtype* Y) {
+  size_t mem_tot = 0;
+  size_t mem_free = 0;
+  cudaMemGetInfo  (&mem_free, & mem_tot);
+  size_t mem_req = sizeof(Dtype) * N;
+  CHECK_LE(mem_req, mem_free) << "Required memory exceeds the GPU memory limits.";
+//  LOG(INFO)<<"Free memory: "<<mem_free_0;
+//  LOG(INFO)<<"Total memory: "<<mem_tot_0;
+//  LOG(INFO)<<"Memory required: "<<sizeof(Dtype) * N;
   if (X != Y) {
     if (Caffe::mode() == Caffe::GPU) {
 #ifndef CPU_ONLY
@@ -152,14 +160,14 @@ void caffe_cpu_axpby<double>(const int N, const double alpha, const double* X,
 // C := diag(x)*A. if mode = CUBLAS_SIDE_LEFT
 // A, C have size M x N
 template <typename Dtype>
-void caffe_cpu_dgmm(cublasSideMode_t mode, 
+void caffe_cpu_dgmm(cublasSideMode_t mode,
 		    const int M, const int N, const Dtype *A, const Dtype *x, Dtype *C) {
   memcpy(C, A, M * N * sizeof(Dtype));
   caffe_cpu_dgmm(mode, M, N, C, x);
 }
 
 template <>
-void caffe_cpu_dgmm<float>(cublasSideMode_t mode, 
+void caffe_cpu_dgmm<float>(cublasSideMode_t mode,
 			   const int M, const int N, float *A, const float *x) {
   if (mode == CUBLAS_SIDE_LEFT) {
     for (int m = 0; m < M; ++m)
@@ -172,7 +180,7 @@ void caffe_cpu_dgmm<float>(cublasSideMode_t mode,
 }
 
 template <>
-void caffe_cpu_dgmm<double>(cublasSideMode_t mode, 
+void caffe_cpu_dgmm<double>(cublasSideMode_t mode,
 			    const int M, const int N, double *A, const double *x) {
   if (mode == CUBLAS_SIDE_LEFT) {
     for (int m = 0; m < M; ++m)
@@ -185,7 +193,7 @@ void caffe_cpu_dgmm<double>(cublasSideMode_t mode,
 }
 
 template <>
-void caffe_gpu_dgmm<float>(cublasSideMode_t mode, 
+void caffe_gpu_dgmm<float>(cublasSideMode_t mode,
 			   const int M, const int N, const float *A, const float *x, float *C) {
   // Note that cublas follows fortran order.
   mode = (mode == CUBLAS_SIDE_RIGHT) ? CUBLAS_SIDE_LEFT : CUBLAS_SIDE_RIGHT;
@@ -196,7 +204,7 @@ void caffe_gpu_dgmm<float>(cublasSideMode_t mode,
 			   C, N));
 }
 template <>
-void caffe_gpu_dgmm<float>(cublasSideMode_t mode, 
+void caffe_gpu_dgmm<float>(cublasSideMode_t mode,
 			     const int M, const int N, float *A, const float *x) {
   // Note that cublas follows fortran order.
   mode = (mode == CUBLAS_SIDE_RIGHT) ? CUBLAS_SIDE_LEFT : CUBLAS_SIDE_RIGHT;
@@ -208,7 +216,7 @@ void caffe_gpu_dgmm<float>(cublasSideMode_t mode,
 }
 
 template <>
-void caffe_gpu_dgmm<double>(cublasSideMode_t mode, 
+void caffe_gpu_dgmm<double>(cublasSideMode_t mode,
 			    const int M, const int N, const double *A, const double *x, double *C) {
   // Note that cublas follows fortran order.
   mode = (mode == CUBLAS_SIDE_RIGHT) ? CUBLAS_SIDE_LEFT : CUBLAS_SIDE_RIGHT;
@@ -219,7 +227,7 @@ void caffe_gpu_dgmm<double>(cublasSideMode_t mode,
 			   C, N));
 }
 template <>
-void caffe_gpu_dgmm<double>(cublasSideMode_t mode, 
+void caffe_gpu_dgmm<double>(cublasSideMode_t mode,
 			    const int M, const int N, double *A, const double *x) {
   // Note that cublas follows fortran order.
   mode = (mode == CUBLAS_SIDE_RIGHT) ? CUBLAS_SIDE_LEFT : CUBLAS_SIDE_RIGHT;

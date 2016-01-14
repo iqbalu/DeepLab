@@ -31,8 +31,10 @@ void SoftmaxWithLossLayer<Dtype>::LayerSetUp(
     Dtype tmp_val;
     while (infile >> tmp_val) {
       CHECK_GE(tmp_val, 0) << "Weights cannot be negative";
+      std::cout<<tmp_val<<" ";
       loss_weights_.push_back(tmp_val);
     }
+	std::cout<<std::endl;
     infile.close();    
 
     CHECK_EQ(loss_weights_.size(), prob_.channels());
