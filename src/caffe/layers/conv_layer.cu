@@ -14,6 +14,14 @@ void ConvolutionLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
   for (int i = 0; i < bottom.size(); ++i) {
     const Dtype* bottom_data = bottom[i]->gpu_data();
+    const Dtype* b_data = bottom[i]->mutable_cpu_data();
+    
+    /*float sum = 0;
+    for(int j=0; j<bottom[i]->count(); j++)
+		sum += b_data[j];
+    LOG(INFO)<<"Sum in COnv "<<sum;*/
+    
+    
     Dtype* top_data = top[i]->mutable_gpu_data();
     Dtype* col_buff = NULL;
     if (!is_1x1_) {

@@ -15,6 +15,8 @@
 #include "caffe/blob.hpp"
 #include "caffe/proto/caffe.pb.h"
 
+#include "matio.h"
+
 #define HDF5_NUM_DIMS 4
 
 namespace caffe {
@@ -128,6 +130,12 @@ inline bool DecodeDatum(Datum* datum) {
 }
 
 #ifndef OSX
+
+/// Add: ReadMatfileToCVMat
+vector<int> getCVDataTypesFromMatType(int id, int numChannels);
+cv::Mat ReadMatFileToCVMat(const string filename, const int targetHeight, const int targetWidth, const string& matFieldName);
+
+
 cv::Mat ReadImageToCVMat(const string& filename,
 			 const int height, const int width, const bool is_color, 
 			 int* img_height=NULL, int* img_width=NULL);

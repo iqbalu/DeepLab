@@ -41,6 +41,7 @@ class DataTransformer {
    */
   void Transform(const Datum& datum, Blob<Dtype>* transformed_blob);
 
+
   /**
    * @brief Applies the transformation defined in the data layer's
    * transform_param block to a vector of Datum.
@@ -70,7 +71,7 @@ class DataTransformer {
   // jay add
   void TransformImgAndSeg(const std::vector<cv::Mat>& cv_img_seg,
     Blob<Dtype>* transformed_data_blob, Blob<Dtype>* transformed_label_blob,
-    const int ignore_label);
+    const int ignore_label, bool ML=false); // CHANGE 21.1
   //void TransformSegAndPad(const cv::Mat& cv_seg, Blob<Dtype>* transformed_blob);
   //void TransformAndPad(const cv::Mat& cv_img, Blob<Dtype>* transformed_blob);
   // end jay
@@ -88,6 +89,16 @@ class DataTransformer {
    *    input blob. It can be part of top blob's data.
    */
   void Transform(Blob<Dtype>* input_blob, Blob<Dtype>* transformed_blob);
+
+  vector<int> InferBlobShape(const vector<cv::Mat> & mat_vector);
+    /**
+     * @brief Infers the shape of transformed_blob will have when
+     *    the transformation is applied to the data.
+     *
+     * @param cv_img
+     *    cv::Mat containing the data to be transformed.
+     */
+    vector<int> InferBlobShape(const cv::Mat& cv_img);
 
  protected:
    /**

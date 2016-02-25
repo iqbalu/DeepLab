@@ -17,6 +17,8 @@
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/util/io.hpp"
 
+
+
 namespace caffe {
 
 using google::protobuf::io::FileInputStream;
@@ -63,6 +65,109 @@ bool ReadProtoFromBinaryFile(const char* filename, Message* proto) {
 void WriteProtoToBinaryFile(const Message& proto, const char* filename) {
   fstream output(filename, ios::out | ios::trunc | ios::binary);
   CHECK(proto.SerializeToOstream(&output));
+}
+
+vector<int> getCVDataTypesFromMatType(int id, int numChannels)
+{
+    vector<int> types;
+    switch(id)
+    {
+        case 1:
+            // int8
+            types.push_back(CV_8S);
+            types.push_back(CV_8SC(numChannels));
+            break;
+        case 2:
+            //uint8
+            types.push_back(CV_8U);
+            types.push_back(CV_8UC(numChannels));
+            break;
+        case 3:
+            //int16
+            types.push_back(CV_16S);
+            types.push_back(CV_16SC(numChannels));
+            break;
+        case 4:
+            //uint16
+            types.push_back(CV_16U);
+            types.push_back(CV_16UC(numChannels));
+            break;
+        case 5:
+            //int32
+            types.push_back(CV_32F);
+            types.push_back(CV_32FC(numChannels));
+            break;
+        case 9:
+            //double
+            types.push_back(CV_64F);
+            types.push_back(CV_64FC(numChannels));
+            break;
+
+            return types;
+
+    }
+}
+cv::Mat ReadMatFileToCVMat(const string filename, const int targetHeight, const int targetWidth, const string& matFieldName)
+{
+    const char *path = filename.c_str();
+
+    mat_t *matfp;
+    matvar_t *matvar;
+    matfp = Mat_Open(path, MAT_ACC_RDONLY);
+
+    CHECK(matfp != NULL) << "could not open or find file " << filename;
+
+    matvar = Mat_VarRead(matfp, matFieldName.c_str());
+    CHECK(matvar != NULL) << "matlab field " << matFieldName << " could not be loaded";
+
+    void *data = matvar->data;
+    CHECK(data != NULL) << "coult not access data";
+
+    CHECK(matvar->rank <= 3) << "segmentation matrix with more than 3 dimensions is not supported";
+    int dimensions[matvar->rank];
+    for(int d=0;d<matvar->rank;d++)
+    {
+        dimensions[d] = matvar->dims[d];
+    }
+
+    int height = dimensions[0];
+    int width = dimensions[1];
+
+    int numChannels = matvar->rank == 3 ? matvar->dims[2] : 1;
+    int stepSize = height * width;
+
+    vector<cv::Mat> channels(numChannels);
+
+    int dataType = matvar->data_type;
+    vector<int> cvTypes = getCVDataTypesFromMatType(dataType, numChannels);
+
+    CHECK(cvTypes.size() > 0) << "Matrix data type currently not supported";
+
+    for(int c=0;c<numChannels;c++)
+    {
+        // since matlab stores matrices in column major order, we initialize the transpose image first to dont mix up the data and then transpose
+        cv::Mat currChn(cv::Size(height, width), cvTypes[0], (data+c*stepSize), cv::Mat::AUTO_STEP);
+        cv::transpose(currChn, currChn);
+
+        // convert to unsigned as currently enforced by DataTransformer
+        currChn.convertTo(currChn, CV_8U);
+       
+        channels[c] = currChn;
+    }
+
+    cv::Mat segImg(cv::Size(width,height), cvTypes[1]);
+    cv::merge(channels, segImg);
+
+
+    if(targetHeight>0 && targetWidth>0)
+    {
+        cv::resize(segImg, segImg, cv::Size(targetWidth, targetHeight));
+    }
+
+	 Mat_VarFree(matvar);
+	 Mat_Close(matfp);
+    return segImg;
+
 }
 
 cv::Mat ReadImageToCVMat(const string& filename,

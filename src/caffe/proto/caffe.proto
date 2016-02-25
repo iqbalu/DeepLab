@@ -278,6 +278,7 @@ message LayerParameter {
     RELATIVE_ERROR = 54;
     RELU = 18;
     SEG_ACCURACY = 40;
+    SEG_ACCURACY_ML = 60;
     SIGMOID = 19;
     SIGMOID_CROSS_ENTROPY_LOSS = 27;
     SILENCE = 36;
@@ -289,6 +290,7 @@ message LayerParameter {
     THRESHOLD = 31;
     UNIQUE_LABEL = 48;
     WINDOW_DATA = 24;
+    BINARY_LABEL_DROPOUT=61;
   }
   optional LayerType type = 5; // the layer type from the enum above
 
@@ -685,7 +687,12 @@ message ImageDataParameter {
     NONE = 0;
     IMAGE = 1;
     PIXEL = 2;
+    MATPIXEL = 3; 
   }
+  
+  // this is field name in the .mat file containing segmentation data
+  optional string matFieldName = 17 [default = "seg_mask"];
+
   optional LabelType label_type = 16 [default = IMAGE];
   // DEPRECATED. See TransformationParameter. For data pre-processing, we can do
   // simple scaling and subtracting the data mean, if provided. Note that the
@@ -701,7 +708,7 @@ message ImageDataParameter {
   optional string root_folder = 12 [default = ""];
   optional bool has_label = 13 [default = true];
   optional int32 max_labels = 14 [default = 1];
-}
+} 
 
 // Message that stores parameters InfogainLossLayer
 message InfogainLossParameter {

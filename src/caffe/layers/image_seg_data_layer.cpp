@@ -17,6 +17,8 @@
 #include "caffe/util/math_functions.hpp"
 #include "caffe/util/rng.hpp"
 
+#include "matio.h"
+
 namespace caffe {
 
 template <typename Dtype>
@@ -34,7 +36,7 @@ void ImageSegDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom
   string root_folder = this->layer_param_.image_data_param().root_folder();
 
   TransformationParameter transform_param = this->layer_param_.transform_param();
-  CHECK(transform_param.has_mean_file() == false) << 
+  CHECK(transform_param.has_mean_file() == false) <<
          "ImageSegDataLayer does not support mean file";
   CHECK((new_height == 0 && new_width == 0) ||
       (new_height > 0 && new_width > 0)) << "Current implementation requires "
@@ -82,6 +84,19 @@ void ImageSegDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom
   const int channels = cv_img.channels();
   const int height = cv_img.rows;
   const int width = cv_img.cols;
+
+  // CHANGE 18.1
+  // If LabelType ist MATPIXEL, read the corresponding segmentation file and obtain the number of segmentation channels
+  int label_channels = 1;
+  if(label_type == ImageDataParameter_LabelType_MATPIXEL)
+  {
+      string matPath = root_folder + lines_[lines_id_].second;
+      cv::Mat segImg = ReadMatFileToCVMat(matPath, new_height, new_width, "seg_mask");
+      CHECK(segImg.data) << "Fail to load seg: " << root_folder + lines_[lines_id_].second;
+      label_channels = segImg.channels();
+  }
+  // ENDCHANGE 18.1
+
   // image
   const int crop_size = this->layer_param_.transform_param().crop_size();
   const int batch_size = this->layer_param_.image_data_param().batch_size();
@@ -91,19 +106,21 @@ void ImageSegDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom
     this->transformed_data_.Reshape(1, channels, crop_size, crop_size);
 
     //label
-    top[1]->Reshape(batch_size, 1, crop_size, crop_size);
-    this->prefetch_label_.Reshape(batch_size, 1, crop_size, crop_size);
-    this->transformed_label_.Reshape(1, 1, crop_size, crop_size);
-     
+
+    top[1]->Reshape(batch_size, label_channels, crop_size, crop_size);  // change 18.1
+    this->prefetch_label_.Reshape(batch_size, label_channels, crop_size, crop_size); //change 18.1
+    this->transformed_label_.Reshape(1, label_channels, crop_size, crop_size);  // change 18.1
+
+
   } else {
     top[0]->Reshape(batch_size, channels, height, width);
     this->prefetch_data_.Reshape(batch_size, channels, height, width);
     this->transformed_data_.Reshape(1, channels, height, width);
 
     //label
-    top[1]->Reshape(batch_size, 1, height, width);
-    this->prefetch_label_.Reshape(batch_size, 1, height, width);
-    this->transformed_label_.Reshape(1, 1, height, width);     
+    top[1]->Reshape(batch_size, label_channels, height, width);     // change 18.1
+    this->prefetch_label_.Reshape(batch_size, label_channels, height, width); // change 18.1
+    this->transformed_label_.Reshape(1, label_channels, height, width); // change 18.1
   }
 
   // image dimensions, for each image, stores (img_height, img_width)
@@ -141,77 +158,110 @@ void ImageSegDataLayer<Dtype>::InternalThreadEntry() {
   CHECK(this->prefetch_data_.count());
   CHECK(this->transformed_data_.count());
 
-  Dtype* top_data     = this->prefetch_data_.mutable_cpu_data();
-  Dtype* top_label    = this->prefetch_label_.mutable_cpu_data(); 
-  Dtype* top_data_dim = this->prefetch_data_dim_.mutable_cpu_data();
-
-  const int max_height = this->prefetch_data_.height();
-  const int max_width  = this->prefetch_data_.width();
-
   ImageDataParameter image_data_param    = this->layer_param_.image_data_param();
   const int batch_size = image_data_param.batch_size();
   const int new_height = image_data_param.new_height();
   const int new_width  = image_data_param.new_width();
   const int label_type = this->layer_param_.image_data_param().label_type();
+  const int label_channels = this->transformed_label_.channels();       // CHANGED
   const int ignore_label = image_data_param.ignore_label();
   const bool is_color  = image_data_param.is_color();
   string root_folder   = image_data_param.root_folder();
 
   const int lines_size = lines_.size();
-  int top_data_dim_offset;
+
+  // Reshape according to the first image of each batch
+  // on single input batches allows for inputs of varying dimension.
+  cv::Mat cv_img = ReadImageToCVMat(root_folder + lines_[lines_id_].first,
+      new_height, new_width, is_color);
+
+  CHECK(cv_img.data) << "Could not load " << lines_[lines_id_].first;
+  // Use data_transformer to infer the expected blob shape from a cv_img.
+  vector<int> top_shape = this->data_transformer_.InferBlobShape(cv_img);
+  this->transformed_data_.Reshape(top_shape[0], top_shape[1], top_shape[2], top_shape[3]);
+  this->transformed_label_.Reshape(top_shape[0], label_channels, top_shape[2], top_shape[3]);   // CHANGED
+
+  // Reshape batch according to the batch_size.
+  top_shape[0] = batch_size;
+  this->prefetch_data_.Reshape(batch_size, top_shape[1], top_shape[2], top_shape[3]);
+  this->prefetch_label_.Reshape(batch_size, label_channels, top_shape[2], top_shape[3]);    // CHANGED
+
+  Dtype* prefetch_data = this->prefetch_data_.mutable_cpu_data();
+  Dtype* prefetch_label = this->prefetch_label_.mutable_cpu_data();
+  CHECK(this->prefetch_data_.count());
+  CHECK(this->transformed_data_.count());
 
   for (int item_id = 0; item_id < batch_size; ++item_id) {
-    top_data_dim_offset = this->prefetch_data_dim_.offset(item_id);
-
     std::vector<cv::Mat> cv_img_seg;
-
     // get a blob
     timer.Start();
     CHECK_GT(lines_size, lines_id_);
 
     int img_row, img_col;
-    cv_img_seg.push_back(ReadImageToCVMat(root_folder + lines_[lines_id_].first,
-	  new_height, new_width, is_color, &img_row, &img_col));
 
-    top_data_dim[top_data_dim_offset]     = static_cast<Dtype>(std::min(max_height, img_row));
-    top_data_dim[top_data_dim_offset + 1] = static_cast<Dtype>(std::min(max_width, img_col));
+    // 18.1. ACCESS TO DATA DIM!!
+    cv::Mat cv_img = ReadImageToCVMat(root_folder + lines_[lines_id_].first,
+      		new_height, new_width, is_color, &img_row, &img_col);
 
-    if (!cv_img_seg[0].data) {
-      DLOG(INFO) << "Fail to load img: " << root_folder + lines_[lines_id_].first;
-    }
+    CHECK(cv_img.data) << "Could not load " << lines_[lines_id_].first;
+    cv_img_seg.push_back(cv_img);
+    double min_val, max_val;
+    cv::minMaxLoc(cv_img_seg[0], &min_val, &max_val);
+
     if (label_type == ImageDataParameter_LabelType_PIXEL) {
-      cv_img_seg.push_back(ReadImageToCVMat(root_folder + lines_[lines_id_].second,
-					    new_height, new_width, false));
+      cv::Mat cv_seg = ReadImageToCVMat(root_folder + lines_[lines_id_].second,
+                  new_height, new_width, false);
+      CHECK(cv_seg.data) << "Could not load " << lines_[lines_id_].second;
+      cv_img_seg.push_back(cv_seg);
+    } else if(label_type == ImageDataParameter_LabelType_MATPIXEL)
+    {
+      // LABEL TYPE MATPIXEL
+      // converting .mat to cv::Mat
+      string matPath = root_folder + lines_[lines_id_].second;
+      cv::Mat segImg = ReadMatFileToCVMat(matPath, new_height, new_width, "seg_mask");
+      cv_img_seg.push_back(segImg);
       if (!cv_img_seg[1].data) {
-	DLOG(INFO) << "Fail to load seg: " << root_folder + lines_[lines_id_].second;
+           DLOG(INFO) << "Fail to load seg: " << root_folder + lines_[lines_id_].second;
       }
     }
     else if (label_type == ImageDataParameter_LabelType_IMAGE) {
       const int label = atoi(lines_[lines_id_].second.c_str());
-      cv::Mat seg(cv_img_seg[0].rows, cv_img_seg[0].cols, 
-		  CV_8UC1, cv::Scalar(label));
-      cv_img_seg.push_back(seg);      
+      cv::Mat cv_seg(cv_img_seg[0].rows, cv_img_seg[0].cols,
+          CV_8UC1, cv::Scalar(label));
+      cv_img_seg.push_back(cv_seg);
     }
     else {
-      cv::Mat seg(cv_img_seg[0].rows, cv_img_seg[0].cols, 
-		  CV_8UC1, cv::Scalar(ignore_label));
-      cv_img_seg.push_back(seg);
+      cv::Mat cv_seg(cv_img_seg[0].rows, cv_img_seg[0].cols,
+        CV_8UC1, cv::Scalar(ignore_label));
+      cv_img_seg.push_back(cv_seg);
     }
 
     read_time += timer.MicroSeconds();
     timer.Start();
+
     // Apply transformations (mirror, crop...) to the image
     int offset;
 
     offset = this->prefetch_data_.offset(item_id);
-    this->transformed_data_.set_cpu_data(top_data + offset);
+    this->transformed_data_.set_cpu_data(prefetch_data + offset);
 
     offset = this->prefetch_label_.offset(item_id);
-    this->transformed_label_.set_cpu_data(top_label + offset);
+    this->transformed_label_.set_cpu_data(prefetch_label + offset);
 
-    this->data_transformer_.TransformImgAndSeg(cv_img_seg, 
-	 &(this->transformed_data_), &(this->transformed_label_),
-	 ignore_label);
+    bool ML = label_type == ImageDataParameter_LabelType_MATPIXEL;
+
+    this->data_transformer_.TransformImgAndSeg(cv_img_seg,
+     &(this->transformed_data_), &(this->transformed_label_),
+     ignore_label, ML);
+
+    const Dtype* data = this->transformed_data_.cpu_data();
+    int cn = this->transformed_data_.count();
+    for(int i=0; i<cn; i++){
+      CHECK_GE(data[i], -255) << i;
+      CHECK_LE(data[i], 255) << i;
+      CHECK_EQ(data[i], data[i]);
+    }
+
     trans_time += timer.MicroSeconds();
 
     // go to the next std::vector<int>::iterator iter;
