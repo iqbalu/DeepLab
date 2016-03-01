@@ -8,11 +8,6 @@
 #include "caffe/util/math_functions.hpp"
 #include "caffe/vision_layers.hpp"
 
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/highgui/highgui_c.h>
-#include <opencv2/imgproc/imgproc.hpp>
-
 namespace caffe {
 
 
@@ -51,22 +46,21 @@ void BinaryLabelDropoutLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bot
     CHECK_EQ(label_sum->num(), 1) << "Currently only batch size 1 is supported";
 
     /// calculate probabilities
-
     Dtype fgcount_f; int fgcount;
     caffe_gpu_asum(label_sum->count(), sum, &fgcount_f);
 
-    fgcount = static_cast<int>(fgcount_f);
-    int bgcount = label_sum->count() - fgcount;
+    fgcount                     = static_cast<int>(fgcount_f);
+    int bgcount                 = label_sum->count() - fgcount;
     CHECK_GT(fgcount,0);
 
     // Probability for background pixel to be kept
-    Dtype fgProb = (fgcount / (Dtype) (bgcount + fgcount));
-    Dtype bgProb = 3.25 * fgProb;
-    bgProb = std::min(bgProb, 1-fgProb);
+    Dtype fgProb                = (fgcount / (Dtype) (bgcount + fgcount));
+    Dtype bgProb                = 3.25 * fgProb;
+    bgProb                      = std::min(bgProb, 1-fgProb);
 
-    threshold_ = 1. - bgProb;
-    uint_thres_ = static_cast<unsigned int>(UINT_MAX * threshold_);
-    scale_ = 1. / (1. - threshold_ + fgProb);
+    threshold_                  = 1. - bgProb;
+    uint_thres_                 = static_cast<unsigned int>(UINT_MAX * threshold_);
+    scale_                      = 1. / (1. - threshold_ + fgProb);
 
     // create random numbers
     caffe_gpu_rng_uniform(d_count, mask);
@@ -80,7 +74,6 @@ void BinaryLabelDropoutLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bot
     caffe_copy(d_count, bottom_data, top_data);
   }
 }
-
 template <typename Dtype>
 __global__ void BinaryLabelDropoutBackward(const int n, const Dtype* in_diff,
     const unsigned int* mask, const unsigned int threshold, const float scale,

@@ -8,10 +8,6 @@
 #include "caffe/util/math_functions.hpp"
 #include "caffe/vision_layers.hpp"
 
-#include <opencv2/core/core.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
-#include <opencv2/highgui/highgui.hpp>
-
 
 namespace caffe {
 
@@ -95,8 +91,6 @@ void SegAccuracyMLLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     CHECK_EQ(height, label_height) << "Data height and label height not equal";
     CHECK_EQ(channels, label_channels) << "Data channels and label channels not equal";
 
-    int true_fg = 0;
-
     for (int c = 0; c < channels; ++c)
     {
         for (int h = 0; h < height; ++h)
@@ -121,10 +115,6 @@ void SegAccuracyMLLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
         accumulated_confusion.accumulate((*confusion_matrices_[c]));
     }
 
-    /// calculate average accuracies
-    /// [0] -> background
-    /// [1] -> foreground
-    /// [2] -> overall
     LOG(INFO) << "#####SegAccuracyMLLayer####";
     LOG(INFO) << "[0] -> avgPrecision\t [1] -> avgRecall\t [2] -> Accuracy \t[3] -> avgJaccard";
     top_accuracies[0] = static_cast<Dtype>(accumulated_confusion.avgPrecision());
@@ -140,18 +130,6 @@ void SegAccuracyMLLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
         LOG(INFO) << "\t\tForeground: " << static_cast<Dtype>(confusion_matrices_[c]->accuracy(1));
         LOG(INFO) << "\t\tOverall: " << static_cast<Dtype>(confusion_matrices_[c]->accuracy());
     } */
-
-    /*
-    cv::Mat test(cv::Size(width, height), CV_32FC1, bottom[0]->mutable_cpu_data() + 1 * height * width);
-    cv::Mat gt(cv::Size(width, height), CV_32FC1, bottom[1]->mutable_cpu_data() + 1 * height * width);
-    cv::Mat test_cop = test.clone();
-    cv::Mat test_gt = gt.clone();
-    cv::resize(test_cop, test_cop, cv::Size(10 * width, 10 * height));
-    cv::resize(test_gt, test_gt, cv::Size(10 * width, 10 * height));
-
-    cv::imshow("test", test_cop);
-    cv::imshow("gt", test_gt);
-    cv::waitKey(10); */
 }
 
 INSTANTIATE_CLASS(SegAccuracyMLLayer);

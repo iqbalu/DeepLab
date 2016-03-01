@@ -8,10 +8,6 @@
 #include "caffe/util/math_functions.hpp"
 #include "caffe/vision_layers.hpp"
 
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/highgui/highgui_c.h>
-#include <opencv2/imgproc/imgproc.hpp>
 
 namespace caffe {
 
@@ -46,8 +42,8 @@ void BinaryLabelDropoutLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bot
   Blob<Dtype>* labels_sum   = bottom[1];
   const Dtype* sum   		= labels_sum->cpu_data();
 
-  Dtype* top_data    = top[0]->mutable_cpu_data();
-  unsigned int* mask = rand_vec_.mutable_cpu_data();
+  Dtype* top_data           = top[0]->mutable_cpu_data();
+  unsigned int* mask        = rand_vec_.mutable_cpu_data();
 
   if (Caffe::phase() == Caffe::TRAIN) {
 
@@ -56,18 +52,18 @@ void BinaryLabelDropoutLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bot
 		
     /// calculate probabilities
 
-    int fgcount = caffe_cpu_asum(labels_sum->count(), sum);
-    int bgcount = labels_sum->count() - fgcount;
+    int fgcount             = caffe_cpu_asum(labels_sum->count(), sum);
+    int bgcount             = labels_sum->count() - fgcount;
     CHECK_GT(fgcount, 0);
     
     // Probability for background pixel to be kept
-    Dtype fgProb = (fgcount / (Dtype)(bgcount + fgcount)); 
-    Dtype bgProb = 3.25 * fgProb;
-	bgProb = std::min(bgProb, 1-fgProb);
+    Dtype fgProb            = (fgcount / (Dtype)(bgcount + fgcount));
+    Dtype bgProb            = 3.25 * fgProb;
+    bgProb                  = std::min(bgProb, 1-fgProb);
 
-    threshold_ = 1. - bgProb;
-    uint_thres_ = static_cast<unsigned int>(UINT_MAX * threshold_);
-    scale_     = 1.0 / (1. - threshold_+fgProb);
+    threshold_              = 1. - bgProb;
+    uint_thres_             = static_cast<unsigned int>(UINT_MAX * threshold_);
+    scale_                  = 1.0 / (1. - threshold_+fgProb);
     
     // Create Random numbers
   	caffe_rng_bernoulli(d_count, 1. - threshold_, mask);
@@ -90,10 +86,6 @@ void BinaryLabelDropoutLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bot
 
             }
         }
-       /* cv::Mat cvmask(cv::Size(width, height), CV_32FC1, mask_copy);
-		cv::resize(cvmask, cvmask, cv::Size(10*width, 10*height));
-		cv::imshow("cvmask", cvmask);
-		cv::waitKey(0);*/
     }
   } else {
     caffe_copy(bottom[0]->count(), bottom_data, top_data);
