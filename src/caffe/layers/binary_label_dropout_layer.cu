@@ -76,7 +76,6 @@ void BinaryLabelDropoutLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bot
         d_count, dim, bottom_data, mask, sum, uint_thres_, scale_, top_data);
     CUDA_POST_KERNEL_CHECK;
 
-
   } else {
     caffe_copy(d_count, bottom_data, top_data);
   }

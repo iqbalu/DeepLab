@@ -51,6 +51,7 @@ class ConfusionMatrix {
   double diagSum() const;
   double totalSum() const;
   double accuracy() const;
+  double accuracy(int n) const;
   double avgPrecision() const;
   double avgRecall(const bool strict = true) const;
   double avgJaccard() const;

@@ -414,7 +414,10 @@ message SegAccuracyParameter {
   // will ignore pixels with this value when computing accuracy
   repeated int32 ignore_label = 2;
   optional bool reset = 3 [default = true];
+  // number of labels per channel
+  optional uint32 num_labels = 4 [default = 2];
 }
+
 
 // Message that stores parametres used by SoftmaxWithLossLayer
 message SoftmaxLossParameter {

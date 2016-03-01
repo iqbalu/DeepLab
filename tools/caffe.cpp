@@ -153,6 +153,7 @@ int test() {
   float loss = 0;
   for (int i = 0; i < FLAGS_iterations; ++i) {
     float iter_loss;
+    caffe_net.Reshape();
     const vector<Blob<float>*>& result =
         caffe_net.Forward(bottom_vec, &iter_loss);
     loss += iter_loss;

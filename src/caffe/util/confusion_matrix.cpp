@@ -263,6 +263,24 @@ double ConfusionMatrix::accuracy() const {
   }
 }
 
+double ConfusionMatrix::accuracy(int n) const {
+    CHECK(_matrix.size() > (size_t)n);
+
+    double row_sum = (double)rowSum(n);
+
+    if(_matrix[n].size() > (size_t)n)
+    {
+        double labelVal  = (double)_matrix[n][n];
+
+        if (row_sum == 0) {
+            return 1.0;
+        } else {
+            return labelVal / row_sum;
+        }
+    } else
+      return 0.0;
+}
+
 double ConfusionMatrix::avgPrecision() const {
   double totalPrecision = 0.0;
   for (size_t i = 0; i < _matrix.size(); i++) {

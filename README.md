@@ -1,3 +1,9 @@
+## This Version
+This version has following new features:
+
+1. Accepts variable sized images during training. Note: The image size should be same in a single batch. (This is motivated from the original caffe implementation, but was not part of the DeepLab).
+
+
 ## DeepLab
 
 ### Introduction

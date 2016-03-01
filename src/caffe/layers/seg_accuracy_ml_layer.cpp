@@ -12,133 +12,146 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 
-// TODO: check we should clear confusion_matrix somewhere!
 
 namespace caffe {
 
 template <typename Dtype>
 void SegAccuracyMLLayer<Dtype>::LayerSetUp(
-  const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
-  confusion_matrix_.clear();
-  confusion_matrix_.resize(bottom[0]->channels());
-  SegAccuracyParameter seg_accuracy_param = this->layer_param_.seg_accuracy_param();
-  for (int c = 0; c < seg_accuracy_param.ignore_label_size(); ++c){
-    ignore_label_.insert(seg_accuracy_param.ignore_label(c));
-  }
+    const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
+    confusion_matrices_.clear();
+    confusion_matrices_.resize(bottom[0]->channels());
+
+    SegAccuracyParameter seg_accuracy_param = this->layer_param_.seg_accuracy_param();
+    for (int c = 0; c < seg_accuracy_param.ignore_label_size(); ++c){
+        ignore_label_.insert(seg_accuracy_param.ignore_label(c));
+    }
+
+    num_labels_ = seg_accuracy_param.num_labels();
+    for(int c=0;c<bottom[0]->channels();c++)
+    {
+        confusion_matrices_[c] = new ConfusionMatrix();
+        confusion_matrices_[c]->resize(num_labels_); // <---- foreground and background
+    }
+
 }
 
 template <typename Dtype>
 void SegAccuracyMLLayer<Dtype>::Reshape(
-  const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
+    const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
 
-  CHECK_LE(1, bottom[0]->channels())
-      << "top_k must be less than or equal to the number of channels (classes).";
-  CHECK_EQ(bottom[0]->num(), bottom[1]->num())
-    << "The data and label should have the same number.";
+    CHECK_LE(1, bottom[0]->channels())
+                                    << "top_k must be less than or equal to the number of channels (classes).";
 
-  // CHANGE 18.1
- // CHECK_EQ(bottom[1]->channels(), 1)
- //   << "The label should have one channel.";
-  CHECK_EQ(bottom[1]->channels(), bottom[0]->channels());
-  CHECK_EQ(bottom[0]->height(), bottom[1]->height())
-    << "The data should have the same height as label.";
-  CHECK_EQ(bottom[0]->width(), bottom[1]->width())
-    << "The data should have the same width as label.";
+    CHECK_EQ(bottom[0]->num(), bottom[1]->num())
+                                    << "The data and label should have the same number.";
 
-  top[0]->Reshape(1, bottom[0]->channels(), 1, 3);
-  //top[0]->Reshape(1, 1, 1, 3);
+    CHECK_EQ(bottom[0]->num(), 1)
+                                    << "Currently only a batch size of 1 is supported";
+
+    CHECK_EQ(bottom[1]->channels(), bottom[0]->channels())
+                                    << "Data channels and label channels must match";
+
+    CHECK_EQ(bottom[0]->height(), bottom[1]->height())
+                                    << "The data should have the same height as label.";
+
+    CHECK_EQ(bottom[0]->width(), bottom[1]->width())
+                                    << "The data should have the same width as label.";
+
+    top[0]->Reshape(1, 1, 1, 4);
 }
 
 template <typename Dtype>
 void SegAccuracyMLLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     const vector<Blob<Dtype>*>& top) {
-  const Dtype* bottom_data = bottom[0]->cpu_data();
-  const Dtype* bottom_label = bottom[1]->cpu_data();
-  Dtype *top_data = top[0]->mutable_cpu_data();
 
-  int num = bottom[0]->num();
-  int dim = bottom[0]->count() / bottom[0]->num();
-  int channels = bottom[0]->channels();
-  int height = bottom[0]->height();
-  int width = bottom[0]->width();
+    const Dtype* bottom_data      = bottom[0]->cpu_data();
+    const Dtype* bottom_label     = bottom[1]->cpu_data();
 
-  int label_channels = bottom[1]->channels();
-  int label_height = bottom[1]->height();
-  int label_width = bottom[1]->width();
+    Dtype* top_accuracies         = top[0]->mutable_cpu_data();
 
-  //CHECK(false) << "DEBUG: num = " << num << " dim = " << dim << " channels = " << channels << " height = " << height << " width = " << width << " label channels = " << label_channels << " label width = " << label_width << " label height = " << label_height;
-  int data_index, label_index;
+    int channels                  = bottom[0]->channels();
+    int height                    = bottom[0]->height();
+    int width                     = bottom[0]->width();
 
-  int top_k = 1;  // only support for top_k = 1
+    int label_channels            = bottom[1]->channels();
+    int label_height              = bottom[1]->height();
+    int label_width               = bottom[1]->width();
 
-  // remove old predictions if reset() flag is true
-  //if (this->layer_param_.seg_accuracy_param().reset()) {
-    confusion_matrix_.clear();
-  //}
+    int data_index, label_index;
 
-  CHECK_EQ(width, label_width) << "Data width and label width not equal";
-  CHECK_EQ(height, label_height) << "Data height and label height not equal";
-  CHECK_EQ(channels, label_channels) << "Data channels and label channels not equal";
+    // Initialize accumulated confusion matrix
+    ConfusionMatrix accumulated_confusion;
+    accumulated_confusion.resize(num_labels_);
 
-  for (int c = 0; c < channels; ++c) {
-  for (int i = 0; i < num; ++i) {
-    for (int h = 0; h < height; ++h) {
-      for (int w = 0; w < width; ++w) {
-
-          data_index = ((i * channels + c) * height + h) * width + w;
-          label_index = ((i * channels + c) * height + h) * width + w;
-
-          int data_label = bottom_data[data_index] < static_cast<Dtype>(0.5) ? static_cast<int>(0) : static_cast<int>(1);
-          const int gt_label = static_cast<int>(bottom_label[label_index]);
-
-          if (ignore_label_.count(gt_label) != 0) {
-            // ignore the pixel with this gt_label
-            continue;
-          }
-
-          confusion_matrix_.accumulate(gt_label, data_label);
+    // remove old predictions if reset() flag is true
+    if (this->layer_param_.seg_accuracy_param().reset()) {
+        LOG(INFO) << "RESET";
+        for(int c=0;c<channels;c++)
+        {
+            confusion_matrices_[c]->clear();
         }
-      }
     }
-   //bottom_data  += bottom[0]->offset(1);
-   // bottom_label += bottom[1]->offset(1);
+    CHECK_EQ(width, label_width) << "Data width and label width not equal";
+    CHECK_EQ(height, label_height) << "Data height and label height not equal";
+    CHECK_EQ(channels, label_channels) << "Data channels and label channels not equal";
 
-  // we report all the resuls for each channel
-  top_data[c * 3 + 0] = (Dtype)confusion_matrix_.accuracy();
-  top_data[c * 3 + 1] = (Dtype)confusion_matrix_.avgRecall(false);
-  top_data[c * 3 + 2] = (Dtype)confusion_matrix_.avgJaccard();
+    int true_fg = 0;
 
-  //top[0]->mutable_cpu_data()[0] = (Dtype)confusion_matrix_.accuracy();
-  //top[0]->mutable_cpu_data()[1] = (Dtype)confusion_matrix_.avgRecall(false);
-  //top[0]->mutable_cpu_data()[2] = (Dtype)confusion_matrix_.avgJaccard();
+    for (int c = 0; c < channels; ++c)
+    {
+        for (int h = 0; h < height; ++h)
+        {
+            for (int w = 0; w < width; ++w)
+            {
+                data_index = (c * height + h) * width + w;
+                label_index = (c * height + h) * width + w;
 
-    // clear confusion matrix for every channel
-    confusion_matrix_.clear();
-  }
+                int data_label = bottom_data[data_index] < static_cast<Dtype>(0.5) ? static_cast<int>(0) : static_cast<int>(1);
+                const int gt_label = static_cast<int>(bottom_label[label_index]);
 
+                if (ignore_label_.count(gt_label) != 0) {
+                // ignore the pixel with this gt_label
+                    continue;
+                }
 
+                confusion_matrices_[c]->accumulate(gt_label, data_label);
+            }
+        }
 
-  /*
-  Dtype result;
+        accumulated_confusion.accumulate((*confusion_matrices_[c]));
+    }
 
-  switch (this->layer_param_.seg_accuracy_param().metric()) {
-  case SegAccuracyParameter_AccuracyMetric_PixelAccuracy:
-    result = (Dtype)confusion_matrix_.accuracy();
-    break;
-  case SegAccuracyParameter_AccuracyMetric_ClassAccuracy:
-    result = (Dtype)confusion_matrix_.avgRecall();
-    break;
-  case SegAccuracyParameter_AccuracyMetric_PixelIOU:
-    result = (Dtype)confusion_matrix_.avgJaccard();
-    break;
-  default:
-    LOG(FATAL) << "Unknown Segment accuracy metric.";
-  }
+    /// calculate average accuracies
+    /// [0] -> background
+    /// [1] -> foreground
+    /// [2] -> overall
+    LOG(INFO) << "#####SegAccuracyMLLayer####";
+    LOG(INFO) << "[0] -> avgPrecision\t [1] -> avgRecall\t [2] -> Accuracy \t[3] -> avgJaccard";
+    top_accuracies[0] = static_cast<Dtype>(accumulated_confusion.avgPrecision());
+    top_accuracies[1] = static_cast<Dtype>(accumulated_confusion.avgRecall(false));
+    top_accuracies[2] = static_cast<Dtype>(accumulated_confusion.accuracy());
+    top_accuracies[3] = static_cast<Dtype>(accumulated_confusion.avgJaccard());
 
-  // LOG(INFO) << "Accuracy: " << accuracy;
-  top[0]->mutable_cpu_data()[0] = result;
-  // Accuracy layer should not be used as a loss function.
-  */
+    /*LOG(INFO) << "Accuracies of each channel: ";
+    for(int c=0;c<14;c++)
+    {
+        LOG(INFO) << "\t Channel " << c;
+        LOG(INFO) << "\t\tBackground: " << static_cast<Dtype>(confusion_matrices_[c]->accuracy(0));
+        LOG(INFO) << "\t\tForeground: " << static_cast<Dtype>(confusion_matrices_[c]->accuracy(1));
+        LOG(INFO) << "\t\tOverall: " << static_cast<Dtype>(confusion_matrices_[c]->accuracy());
+    } */
+
+    /*
+    cv::Mat test(cv::Size(width, height), CV_32FC1, bottom[0]->mutable_cpu_data() + 1 * height * width);
+    cv::Mat gt(cv::Size(width, height), CV_32FC1, bottom[1]->mutable_cpu_data() + 1 * height * width);
+    cv::Mat test_cop = test.clone();
+    cv::Mat test_gt = gt.clone();
+    cv::resize(test_cop, test_cop, cv::Size(10 * width, 10 * height));
+    cv::resize(test_gt, test_gt, cv::Size(10 * width, 10 * height));
+
+    cv::imshow("test", test_cop);
+    cv::imshow("gt", test_gt);
+    cv::waitKey(10); */
 }
 
 INSTANTIATE_CLASS(SegAccuracyMLLayer);
